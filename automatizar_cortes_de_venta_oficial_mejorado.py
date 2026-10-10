@@ -3,11 +3,12 @@ from io import BytesIO
 from pathlib import Path
 import logging
 import re
+import shutil
+import subprocess
 import tempfile
 import zipfile
 
 import pandas as pd
-from docx2pdf import convert
 from docxtpl import DocxTemplate
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, Response
@@ -109,6 +110,59 @@ def nombre_seguro(valor: object) -> str:
     return nombre or "sin_referencia"
 
 
+def convertir_docx_a_pdf(word_directory: Path, pdf_directory: Path) -> None:
+    soffice_path = shutil.which("soffice") or shutil.which("soffice.exe")
+    if not soffice_path:
+        for candidate in [
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+        ]:
+            if Path(candidate).exists():
+                soffice_path = candidate
+                break
+
+    if not soffice_path:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "No se encontró LibreOffice. Instálalo y asegúrate de que 'soffice' esté "
+                "disponible en PATH."
+            ),
+        )
+
+    for word_file in sorted(word_directory.glob("*.docx")):
+        try:
+            result = subprocess.run(
+                [
+                    soffice_path,
+                    "--headless",
+                    "--nologo",
+                    "--nodefault",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    str(pdf_directory),
+                    str(word_file),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except Exception as error:
+            logging.exception("Falló la conversión de los reportes Word a PDF con LibreOffice")
+            raise HTTPException(
+                status_code=503,
+                detail="No se pudieron convertir los reportes a PDF con LibreOffice.",
+            ) from error
+
+        if result.returncode != 0:
+            logging.error("LibreOffice falló: %s", result.stderr or result.stdout)
+            raise HTTPException(
+                status_code=503,
+                detail="No se pudieron convertir los reportes a PDF con LibreOffice.",
+            )
+
+
 def generar_paquete(df_totalizado: pd.DataFrame, fecha_corte: date) -> bytes:
     fecha = datetime.today().strftime("Bogotá DC, %d/%m/%Y")
     fecha_de_corte = f"{fecha_corte.day} de {MESES[fecha_corte.month - 1]}"
@@ -136,15 +190,14 @@ def generar_paquete(df_totalizado: pd.DataFrame, fecha_corte: date) -> bytes:
             documento.save(word_directory / nombre_archivo)
 
         try:
-            convert(str(word_directory), str(pdf_directory))
+            convertir_docx_a_pdf(word_directory, pdf_directory)
+        except HTTPException:
+            raise
         except Exception as error:
-            logging.exception("Falló la conversión de los reportes Word a PDF")
+            logging.exception("Falló la conversión de los reportes Word a PDF con LibreOffice")
             raise HTTPException(
                 status_code=503,
-                detail=(
-                    "No se pudieron convertir los reportes a PDF. Verifica que Microsoft Word "
-                    "esté instalado y disponible en este equipo."
-                ),
+                detail="No se pudieron convertir los reportes a PDF con LibreOffice.",
             ) from error
 
         word_files = sorted(word_directory.glob("*.docx"))
@@ -152,7 +205,7 @@ def generar_paquete(df_totalizado: pd.DataFrame, fecha_corte: date) -> bytes:
         if not word_files or len(word_files) != len(pdf_files):
             raise HTTPException(
                 status_code=500,
-                detail="No se generó un PDF por cada marca. Revisa la instalación de Microsoft Word.",
+                detail="No se generó un PDF por cada marca. Revisa la instalación de LibreOffice.",
             )
 
         excel_package = BytesIO()

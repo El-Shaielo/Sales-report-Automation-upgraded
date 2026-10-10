@@ -5,4 +5,4 @@ openpyxl
 python-multipart
 python-docx
 docxtpl
-docx2pdf
+# LibreOffice debe estar instalado en el sistema para convertir DOCX a PDF.
