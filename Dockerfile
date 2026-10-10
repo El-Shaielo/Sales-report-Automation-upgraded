@@ -17,7 +17,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY automatizar_cortes_de_venta_oficial_mejorado.py .
-COPY "Plantilla Cortes de ventas Oficial.docx" .
+COPY "Plantilla_Cortes_de_ventas_Oficial.docx" .
 
 EXPOSE 10000
 
