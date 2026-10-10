@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, Response
 
 app = FastAPI(title="Generador de cortes de venta")
 
-TEMPLATE_PATH = Path(__file__).resolve().with_name("Plantilla Cortes de ventas Oficial.docx")
+TEMPLATE_PATH = Path(__file__).resolve().with_name("Plantilla_Cortes_de_ventas_Oficial.docx")
 REQUIRED_COLUMNS = [
     "Referencia",
     "Código",
