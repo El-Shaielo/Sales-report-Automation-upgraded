@@ -124,17 +124,19 @@ def convertir_docx_a_pdf(word_directory: Path, pdf_directory: Path) -> None:
     if not soffice_path:
         raise HTTPException(
             status_code=503,
-            detail=(
-                "No se encontró LibreOffice. Instálalo y asegúrate de que 'soffice' esté "
-                "disponible en PATH."
-            ),
+            detail="No se encontró LibreOffice. Instálalo y asegúrate de que 'soffice' esté en PATH.",
         )
 
-    for word_file in sorted(word_directory.glob("*.docx")):
+    word_files = sorted(word_directory.glob("*.docx"))
+    if not word_files:
+        return
+
+    with tempfile.TemporaryDirectory(prefix="lo_profile_") as perfil:
         try:
             result = subprocess.run(
                 [
                     soffice_path,
+                    f"-env:UserInstallation={Path(perfil).as_uri()}",
                     "--headless",
                     "--nologo",
                     "--nodefault",
@@ -142,11 +144,12 @@ def convertir_docx_a_pdf(word_directory: Path, pdf_directory: Path) -> None:
                     "pdf",
                     "--outdir",
                     str(pdf_directory),
-                    str(word_file),
+                    *map(str, word_files),
                 ],
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=900,
             )
         except Exception as error:
             logging.exception("Falló la conversión de los reportes Word a PDF con LibreOffice")
@@ -155,13 +158,12 @@ def convertir_docx_a_pdf(word_directory: Path, pdf_directory: Path) -> None:
                 detail="No se pudieron convertir los reportes a PDF con LibreOffice.",
             ) from error
 
-        if result.returncode != 0:
-            logging.error("LibreOffice falló: %s", result.stderr or result.stdout)
-            raise HTTPException(
-                status_code=503,
-                detail="No se pudieron convertir los reportes a PDF con LibreOffice.",
-            )
-
+    if result.returncode != 0:
+        logging.error("LibreOffice falló: %s", result.stderr or result.stdout)
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudieron convertir los reportes a PDF con LibreOffice.",
+        )
 
 def generar_paquete(df_totalizado: pd.DataFrame, fecha_corte: date) -> bytes:
     fecha = datetime.today().strftime("Bogotá DC, %d/%m/%Y")
